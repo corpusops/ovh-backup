@@ -17,6 +17,10 @@
 docker-compose run -v ./backup:/app/backup --rm backup
 ```
 
+## install systemd wide and start at boot
+```sh
+./install.sh
+```
 
 ## Exemples .env
 
