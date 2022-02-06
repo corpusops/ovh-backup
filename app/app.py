@@ -38,8 +38,11 @@ def splitstrip(v, splitter=_default):
 
 def report_err(sentry_url=SENTRY_URL, trace=None):
     if sentry_url:
-        client = Client(sentry_url)
-        client.captureException()
+        try:
+            client = Client(sentry_url)
+            client.captureException()
+        except Exception:
+            log.error(trace)
     elif trace:
         log.error(trace)
 
