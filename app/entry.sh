@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-set -ex
-chown -Rvf $APP_USER .
+DEBUG=${DEBUG-}
+VERBOSE=
+SETTED=
+if [[ -n $DEBUG ]];then
+    VERBOSE="v"
+    SETTED="x"
+fi
+set -e$SETTED
+chown -Rf$VERBOSE $APP_USER .
 if [ "x$@" = "x" ];then
     set -- python app.py
 fi
