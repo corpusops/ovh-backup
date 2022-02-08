@@ -5,4 +5,4 @@ services:
     image: corpusops/ovh-backup
     env_file: [.env]
     volumes:
-    - ./backup:/app/backup
+    - "${BACKUP_DIR:-./backup}:/app/backup"
