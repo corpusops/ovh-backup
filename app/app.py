@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import csv
+import socket
 import datetime
 import ovh as _ovh
 import traceback
 import json
+import re
+import copy
 import requests
 from datetime import datetime, timedelta
 import logging
@@ -20,6 +24,7 @@ log = logging.getLogger(__name__)
 re_flags = re.U | re.M
 SENTRY_URL = os.environ.get("SENTRY_URL", None)
 LOOP_INTERVAL = int(os.environ.get("LOOP_INTERVAL", 60 * 60 * 24))
+LOOP_FAILED_INTERVAL = int(os.environ.get("LOOP_INTERVAL", 60 * 15))
 EXPORTERS = OrderedDict()
 _default = object()
 EXPORT_DIR = os.environ.get("OVH_BACKUP_EXPORT_DIR", "/app/backup")
@@ -56,10 +61,9 @@ class Exporter(object):
         )
 
     def is_exportable(self):
-        ret = False
         id_ = self.__class__.__name__.upper()
-        if os.environ.get("OVH_BACKUP_EXPORT_{0}".format(id_)).strip():
-            ret = True
+        ret = bool(os.environ.get(
+            "OVH_BACKUP_EXPORT_{0}".format(id_), "1").strip())
         eservices = [
             a.upper()
             for a in splitstrip(
@@ -97,7 +101,7 @@ class Exporter(object):
                                   git config user.email ovh@backup
                                   git config user.name ovhbackup
                                   git add . -f
-                                  git commit -am autocommit
+                                  git commit -am autocommit || true
                                   ''', shell=True)
             return ret
 
@@ -115,6 +119,60 @@ class DNS(Exporter):
                     fic.write(ret)
             except _ovh.exceptions.ResourceNotFoundError:
                 continue
+
+
+class IPFO(Exporter):
+    def run_export(self):
+        ovh = self.ovh
+        records = {}
+        record = OrderedDict([
+            ('serverId', None),
+            ('rservice', None),
+            ('datacenter', None),
+            ('rack', None),
+            ('rdns', None),
+            ('sip', None),
+            ('ip', None),
+            ('mac', None),
+            ('service', None),
+        ])
+        for ip in self.ovh.get('/ip'):
+            sip = ip.split('/')[0]
+            if '::' in ip:
+                continue
+            d = ovh.get(f'/ip/{sip}')
+            r = copy.deepcopy(record)
+            r['rdns'] = socket.getnameinfo((sip, 0), 0)[0]
+            rt = d['routedTo']
+            if rt:
+                serviceName = r['service'] = rt['serviceName']
+                if serviceName and serviceName.startswith('ns'):
+                    ded = ovh.get(f'/dedicated/server/{serviceName}')
+                    r['rservice'] = re.sub('\.$', '', ded['reverse'])
+                    r['serverId'] = ded['serverId']
+                    r['datacenter'] = ded['datacenter']
+                    r['rack'] = ded['rack']
+            r['ip'] = d['ip']
+            r['sip'] = sip
+            records[sip] = r
+
+        ret = {'ips': records, 'by_service': {}}
+        services = ret['by_service']
+        for ip, ipd in ret['ips'].items():
+            s = ipd['rservice']
+            if s:
+                services.setdefault(s, {})[ip] = ipd
+        j = json.dumps(ret, indent=2, sort_keys=True)
+        f = os.path.join(self.export_dir, "ips.json")
+        with open(f, "w") as fic:
+            fic.write(j)
+
+        f = os.path.join(self.export_dir, "ips.csv")
+        with open(f, "w") as fic:
+            writer = csv.DictWriter(fic, fieldnames=[a for a in record])
+            writer.writeheader()
+            writer.writerows(ret["ips"].values())
+        return ret
 
 
 def register_exporter(exporter):
@@ -147,14 +205,16 @@ def __call__(*a, **kw):
             time.sleep(LOOP_INTERVAL)
         except KeyboardInterrupt:
             raise
-        except:  # noqa
-           trace = traceback.format_exc()
-           print(trace)
-           if SENTRY_URL:
-               report_err(SENTRY_URL, trace)
+        except Exception:  # noqa
+            trace = traceback.format_exc()
+            print(trace)
+            if SENTRY_URL:
+                report_err(SENTRY_URL, trace)
+            time.sleep(LOOP_FAILED_INTERVAL)
 
 
-register_exporter(DNS)
+for i in ['DNS', 'IPFO']:
+    register_exporter(globals()[i])
 
 if __name__ == "__main__":
     __call__()

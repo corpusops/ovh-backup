@@ -73,8 +73,8 @@ class Check(object):
         )
         parser.add_argument(
             "--warning",
-            default=1.8 * dlag,
-            const=1.8 * dlag,
+            default=15 * dlag,
+            const=15 * dlag,
             type=str,
             nargs="?",
             dest="wlag",
@@ -82,8 +82,8 @@ class Check(object):
         )
         parser.add_argument(
             "--critical",
-            default=2.2 * dlag,
-            const=2.2 * dlag,
+            default=30 * dlag,
+            const=30 * dlag,
             type=float,
             nargs="?",
             dest="clag",
@@ -102,7 +102,7 @@ class Check(object):
         self.opt_parser()
         msg = ""
         if self.args["services"] is None:
-            self.args["services"] = ["dns"]
+            self.args["services"] = ["dns", "ipfo"]
 
         for service in self.args["services"]:
             lo = None
@@ -120,14 +120,14 @@ class Check(object):
                 """,
                 shell=True,
             ).decode('utf-8')
-            for l in ret.splitlines():
-                if l.startswith('Date:'):
-                    sdt = re.sub("Date:\s+", '', l)
+            for ln in ret.splitlines():
+                if ln.startswith('Date:'):
+                    sdt = re.sub("Date:\s+", '', ln)
                     lo = parser.parse(sdt)
                     break
             if lo is None:
                 method = self.critical
-                msg += f' -- no last run for {service} service²'
+                msg += f' -- no last run for {service} service'
                 continue
             now = datetime.now(tz=lo.tzinfo)
             counters["{0}_last_ok".format(service)] = int(lo.timestamp())
