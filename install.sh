@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -x
+set -ex
 cd $(dirname $(readlink -f $0))
 docker-compose -f docker-compose.yml -f docker-compose-build.yml build
 cp ovh-backup.service /etc/systemd/system
