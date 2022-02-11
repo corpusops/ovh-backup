@@ -11,6 +11,7 @@
 
 ## What is exportable
 - dns: export all dns zones (BIND format)
+- ipfo: export all IPFO infos
 
 ## Run
 ```sh
