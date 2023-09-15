@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import os
+import urllib
 import csv
 import socket
 import datetime
@@ -103,6 +104,11 @@ class Exporter(object):
                                   git add . -f
                                   git commit -am autocommit || true
                                   ''', shell=True)
+            log.info(
+                "Exported {0} to {1}".format(
+                    self.__class__.__name__, self.export_dir
+                )
+            )
             return ret
 
 
@@ -119,6 +125,11 @@ class DNS(Exporter):
                     fic.write(ret)
             except _ovh.exceptions.ResourceNotFoundError:
                 continue
+            except:
+                trace = traceback.format_exc()
+                if 'expired' in trace.lower():
+                    continue
+                report_err(SENTRY_URL, trace)
 
 
 class IPFO(Exporter):
@@ -140,7 +151,12 @@ class IPFO(Exporter):
             sip = ip.split('/')[0]
             if '::' in ip:
                 continue
-            d = ovh.get(f'/ip/{sip}')
+            try:
+                d = ovh.get(f'/ip/{urllib.parse.quote_plus(ip)}')
+            except Exception:
+                trace = traceback.format_exc()
+                report_err(SENTRY_URL, trace)
+                continue
             r = copy.deepcopy(record)
             r['rdns'] = socket.getnameinfo((sip, 0), 0)[0]
             rt = d['routedTo']
@@ -154,6 +170,7 @@ class IPFO(Exporter):
                     r['rack'] = ded['rack']
             r['ip'] = d['ip']
             r['sip'] = sip
+            log.info(f"Exported IPFO {sip}")
             records[sip] = r
 
         ret = {'ips': records, 'by_service': {}}
@@ -207,14 +224,13 @@ def __call__(*a, **kw):
             raise
         except Exception:  # noqa
             trace = traceback.format_exc()
-            print(trace)
-            if SENTRY_URL:
-                report_err(SENTRY_URL, trace)
+            report_err(SENTRY_URL, trace)
             time.sleep(LOOP_FAILED_INTERVAL)
 
 
 for i in ['DNS', 'IPFO']:
     register_exporter(globals()[i])
+
 
 if __name__ == "__main__":
     __call__()
